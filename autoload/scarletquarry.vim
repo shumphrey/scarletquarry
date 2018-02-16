@@ -91,7 +91,6 @@ function! scarletquarry#search(type, query) abort
         if empty(res)
             call s:throw('Failed to query redmine api')
         endif
-        " echomsg res.total_count
 
         let b:scarletquarry_search = map(res.issues, '{"id": v:val.id, "title": v:val.subject, "status": v:val.status.name, "project": v:val.project.name, "author": v:val.author.name, "description": v:val.description}')
     endif

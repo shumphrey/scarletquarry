@@ -5,11 +5,17 @@ let g:loaded_scarletquarry = 1
 
 
 function! s:config() abort
-    let buffer = fugitive#buffer()
+    let repo = fugitive#buffer().repo()
 
-    let url = buffer.repo().config('redmine.url')
-    let key = buffer.repo().config('redmine.apikey')
-    if empty(url)
+    let type = repo.config('issuetracker.type')
+    if !empty(type) && type != 'redmine'
+        return ''
+    endif
+
+    let url = repo.config('redmine.url')
+    let key = repo.config('redmine.apikey')
+
+    if empty(url) || empty(key)
         return ''
     elseif empty(key)
         return ''

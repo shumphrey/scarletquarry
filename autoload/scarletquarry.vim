@@ -77,32 +77,66 @@ function! scarletquarry#request(path, ...) abort
     endif
 endfunction
 
-function! scarletquarry#search(type, query) abort
+function! scarletquarry#search(type, query, prefix) abort
+    let query = substitute(a:query, '#', '', '')
     " redmine api is too slow, we need to cache this
     if !exists('b:scarletquarry_search')
         if !exists('g:scarletquarry_valid_statuses')
             let g:scarletquarry_valid_statuses = [1,2]
         endif
-        let params = '?limit=100&f\[\]=status_id&op\[status_id\]=%3D'
+        let params = '?assigned_to_id=me&limit=100&f\[\]=status_id&op\[status_id\]=%3D'
         for status in g:scarletquarry_valid_statuses
             let params .= '&v\[status_id\]\[\]=' . status
         endfor
+        let params .= '&sort=updated_on:desc'
         let res = scarletquarry#request('/issues.json'.params)
         if empty(res)
             call s:throw('Failed to query redmine api')
         endif
 
-        let b:scarletquarry_search = map(res.issues, '{"id": v:val.id, "title": v:val.subject, "status": v:val.status.name, "project": v:val.project.name, "author": v:val.author.name, "description": v:val.description}')
+        let total = res.total_count
+
+        " return map(copy(issues), '{"word": prefix.v:val.id, "abbr": "#".v:val.id, "menu": v:val.title . " (".v:val.status.")", "info": substitute("*" . v:val.project . "*\n*" . v:val.author . "*\n" . v:val.description,"\\r","","g")}')
+        let b:scarletquarry_search = []
+        let issues = map(res.issues, '{"word": a:prefix . v:val.id, "menu": v:val.subject . " (" . v:val.status.name . ")", "info": substitute("*" . v:val.project.name . "*\n*" . v:val.author.name . "*\n" . v:val.description, "\\r", "","g")}')
+        for issue in issues
+            if match(issue.word, '\c'.query) > -1
+                call complete_add(issue)
+            elseif match(issue.menu, '\c'.query) > -1
+                call complete_add(issue)
+            elseif match(issue.info, '\c'.query) > -1
+                call complete_add(issue)
+            endif
+        endfor
+        call complete_check()
+        call extend(b:scarletquarry_search, issues)
+
+        " while len(b:scarletquarry_search) < total
+        "     let res = scarletquarry#request('/issues.json'.params.'&offset=' . len(b:scarletquarry_search))
+        "     let issues = map(res.issues, '{"word": a:prefix . v:val.id, "menu": v:val.subject . " (" . v:val.status.name . ")", "info": substitute("*" . v:val.project.name . "*\n*" . v:val.author.name . "*\n" . v:val.description, "\\r", "","g")}')
+        "     for issue in issues
+        "         call complete_add(issue)
+        "     endfor
+        "     call complete_check()
+        "     call extend(b:scarletquarry_search, issues)
+        "     echo "len: ".len(b:scarletquarry_search)
+        " endwhile
+        return []
     endif
 
-    if !empty(a:query)
-        let search = substitute(a:query, '#', '', '')
-        let issues = filter(copy(b:scarletquarry_search), 'v:val.id =~# "^'.search.'"')
-    else
-        let issues = b:scarletquarry_search
-    endif
+    let issues = b:scarletquarry_search
+    for issue in issues
+        if match(issue.menu, '\c'.query) > -1
+            call complete_add(issue)
+        elseif match(issue.info, '\c'.query) > -1
+            call complete_add(issue)
+        elseif match(issue.word, '\c'.query) > -1
+            call complete_add(issue)
+        endif
+    endfor
+    call complete_check()
 
-    return {'items': issues}
+    return []
 endfunction
 
 let s:reference = '\<\%(\c\%(clos\|resolv\|refs\|referenc\)e[sd]\=\|\cfix\%(e[sd]\)\=\)\>'
@@ -120,15 +154,11 @@ function! scarletquarry#omnifunc(findstart,base) abort
             let prefix = url.'/issues/'
         endif
         let query = a:base
-        let response = scarletquarry#search('issues', query)
-        if type(response) != type({})
+        let response = scarletquarry#search('issues', query, prefix)
+        if type(response) != type([])
             call s:throw('unknown error')
-        elseif has_key(response, 'message')
-            call s:throw(response.message)
-        else
-            let issues = get(response, 'items', [])
         endif
-        return map(copy(issues), '{"word": prefix.v:val.id, "abbr": "#".v:val.id, "menu": v:val.title . " (".v:val.status.")", "info": substitute("*" . v:val.project . "*\n*" . v:val.author . "*\n" . v:val.description,"\\r","","g")}')
+        return response
     catch /^\%(fugitive\|scarletquarry\):/
         echoerr v:errmsg
     endtry
